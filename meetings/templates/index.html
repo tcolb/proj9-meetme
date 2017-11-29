@@ -1,0 +1,207 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html lang="en"> <head>
+<title>Appointments</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" type="text/css"
+     href="//cdn.jsdelivr.net/bootstrap/latest/css/bootstrap.css"
+/>
+
+
+<link rel="stylesheet" type="text/css"
+    href="/static/css/busy.css"
+/>
+
+<!-- jquery from a content distribution network; probably cached -->
+<script type="text/javascript"
+     src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js">
+</script>
+
+<!-- Ideally the rest of our javascript dependencies would be
+     bundled and minified with 'browserify', but I've found that
+     it difficult to handle browserify dependencies for class
+     projects.  So, we'll pick up moment and a date range picker
+     from CDNs instead.
+-->
+
+<script type="text/javascript" src="//cdn.jsdelivr.net/momentjs/latest/moment.min.js"></script>
+
+<script type="text/javascript" src="//cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.js"></script>
+<link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.css" />
+
+
+</head>
+
+<body>
+<div class="container">
+
+<h1 style="margin-bottom:20px;">Busy times</h1>
+
+<!--
+  -- If there are any warnings or other messages from a prior action,
+  -- they appear above the rest of the content, just until the next
+  -- action.
+  -->
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <ul class=flashes>
+    {% for message in messages %}
+      <li>{{ message }}</li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+{% endwith %}
+
+<div class="row">
+<div class="col-md-3">
+<h3>Date range</h3>
+<form action="/setrange" method="post">
+  <input type="text" name="daterange" size="12"
+    {% if session.daterange is defined %}
+         value="{{session.daterange}}"
+    {% endif %}
+     class="pull-down"
+     style="background: #fff; cursor: pointer; padding: 5px 10px;
+     border: 1px solid #ccc; width: 12em" >
+  <script type="text/javascript">
+  $(function() {
+  $('input[name="daterange"]').daterangepicker(
+    {    ranges: {
+           'Today': [moment(), moment()],
+           'Tomorrow':[moment().add(1, 'days'),
+                       moment().add(1, 'days')],
+           'This week':[moment(), moment().endOf('week')],
+           'Next week':[moment().add(7, 'days').startOf('week'),
+                        moment().add(7, 'days').endOf('week')],
+           'This month':[moment(), moment().endOf('month')],
+           'Within two weeks':[moment(),moment().add(15, 'days')]
+        }}
+       );
+    });
+  </script>
+
+<br />
+</div>
+
+<div class="col-md-3">
+<h3>Time range</h3>
+  <label style="width:2em;">Min</label>
+  <input type="time" name="begintime" size="12"
+    {% if session.timerange.begintime is defined %}
+         value="{{session.timerange.begintime}}"
+    {% endif %}
+     style="background: #fff; cursor: pointer; padding: 5px 10px;
+   border: 1px solid #ccc;">
+   <br/>
+   <label style="width:2em;">Max</label>
+   <input type="time" name="endtime" size="12"
+     {% if session.timerange.endtime is defined %}
+          value="{{session.timerange.endtime}}"
+     {% endif %}
+      style="background: #fff; cursor: pointer; padding: 5px 10px;
+    border: 1px solid #ccc;">
+<br/>
+</div>
+</div>
+<input type="submit" value="Choose" style="margin-bottom: 40px;" />
+</form>
+
+    <!--
+    Show the calendar list (if we have it).  This will need to be turned into
+    a form from which calendars can be picked. Up to three entries are
+    shown in each row (but the order is across then down; I would
+    prefer down then across).
+    -->
+{% if g.calendars is defined  %}
+  <h5>Available calendars:</h5>
+  <div class="row">
+  {% for cal in g.calendars if cal.selected %}
+    <div class="col-md-4">
+      <!-- Create a checkbox, our selection method for the calendars -->
+      <label><input type="checkbox" name="calChk" value="{{ cal.id }}"
+                    style="margin: 10px;">{{ cal.summary }}</label>
+    </div>
+    {% if loop.index is divisibleby 3 %}
+      </div> <div class="row">
+    {% endif %}
+  {% endfor %}
+  </div>
+  <div class="row">
+    <input type="submit" id="subChk" value="Query"
+           style="margin: 15px">
+  </div>
+{% endif %}
+
+<div class="row">
+  <div class="col-md" id="allBusy" style="margin-top: 20px; margin-left: 10px"></div>
+  <div clsas="col-md" id="allFree" style="margin-top: 20px; margin-left: 10px"></div>
+</div>
+
+<script>
+
+  $("#subChk").click(function() {
+    /*
+    Listen for submit click, then make ajax post/get to flask,
+    sending selected calendar ids, and getting event list
+    */
+
+    //https://stackoverflow.com/questions/19766044/best-way-to-get-all-selected-checkboxes-values-in-jquery
+    var calIds = $('input[name="calChk"]:checked').map( function() {
+        return this.value;
+    }).get();
+
+    console.log("Calendar selection handled: posting " + calIds.length + " calendar ID(s)");
+
+    // Posts CalIds to /_events, gets all cal events back
+    $.ajax({
+      type: 'POST',
+      contentType: 'application/json',
+      dataType: 'json',
+      url: '/_events',
+      data: JSON.stringify({ 'ids': calIds }),
+      success: function(data) {
+
+        // Predefine
+        var busyDiv = $("#allBusy")
+        var freeDiv = $("#allFree")
+
+        console.log("Got busy event data: " + data.busy.length + " events");
+        console.log("Clearing old event data from UI...");
+        busyDiv.empty();
+        freeDiv.empty();
+        console.log("Writing new event data to UI...");
+
+
+
+        // Add events headers
+        busyDiv.append("<h5>Busy Events:</h5>")
+        freeDiv.append("<h5>Free Times:</h5>")
+
+        // Iterate through busy events
+        for (i = 0; i < data.busy.length; i++) {
+          // Add event to html
+          // http://api.jquery.com/jQuery/#jQuery2
+          var eventDiv = $("<div/>", { text: data.busy[i]['summary'] +
+                                      ": from " + data.busy[i]['startTime'] +
+                                      " to " + data.busy[i]['endTime']});
+          busyDiv.append(eventDiv);
+        }
+
+        // Iterate through free times
+        for (i = 0; i < data.free.length; i++) {
+          for (j = 0; j < data.free[i].length; j++) {
+            var eventDiv = $("<div/>", { text: data.free[i][j]['startTime'] +
+                                        " to " + data.free[i][j]['endTime']});
+            freeDiv.append(eventDiv);
+          }
+        }
+      }
+    });
+  });
+
+</script>
+
+
+  </div>  <!-- container (for bootstrap) -->
+  </body> </html>
