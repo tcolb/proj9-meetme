@@ -97,13 +97,12 @@ def choose():
 
     gcal_service = get_gcal_service(credentials)
     app.logger.debug("Returned from get_gcal_service")
-    flask.g.calendars = list_calendars(gcal_service)
+    flask.session['calendars'] = list_calendars(gcal_service)
     return flask.redirect("/schedule/" + flask.session['uid'])
 
 
 @app.route("/schedule/<unique_id>")
 def schedule(unique_id):
-    print(">> OCCURRED")
     flask.session['uid'] = unique_id
     # TODO FETCH CALC DATA AND SEND TO CLIENT
     schedule = []
@@ -111,6 +110,11 @@ def schedule(unique_id):
     for time in document["times"]:
         #schedule.append(arrow.get(time).isoformat())
         schedule.append(time)
+
+    try:
+        flask.g.calendars = flask.session['calendars']
+    except KeyError:
+        app.logger.debug("Calendars not defined")
 
     return render_template("schedule.html", times=schedule)
 
