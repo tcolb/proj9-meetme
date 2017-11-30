@@ -24,9 +24,12 @@ from apiclient import discovery
 # Pymongo
 from pymongo import MongoClient
 
+
 ###
 # Globals
 ###
+
+
 import config
 if __name__ == "__main__":
     CONFIG = config.configuration()
@@ -52,9 +55,9 @@ MONGO_CLIENT_URL = "mongodb://{}:{}@{}:{}/{}".format(
 print("Using Mongo URL '{}'".format(MONGO_CLIENT_URL))
 
 
-####
-# DB Config and Setup
-####
+###
+# DB Setup
+###
 
 
 try:
@@ -89,11 +92,12 @@ def choose():
     # I wanted to put what follows into a function, but had
     # to pull it back here because the redirect has to be a
     # 'return'
+
     app.logger.debug("Checking credentials for Google calendar access")
     credentials = valid_credentials()
     if not credentials:
-      app.logger.debug("Redirecting to authorization")
-      return flask.redirect(flask.url_for('oauth2callback'))
+        app.logger.debug("Redirecting to authorization")
+        return flask.redirect(flask.url_for('oauth2callback'))
 
     gcal_service = get_gcal_service(credentials)
     app.logger.debug("Returned from get_gcal_service")
@@ -103,8 +107,8 @@ def choose():
 
 @app.route("/schedule/<unique_id>")
 def schedule(unique_id):
-    flask.session['uid'] = unique_id
-    # TODO FETCH CALC DATA AND SEND TO CLIENT
+    flask.session['uid'] = unique_id  # UID to redirect to after account selection
+
     schedule = []
     document = collection.find_one({ "uid":unique_id })
     for time in document["times"]:
@@ -166,7 +170,6 @@ def valid_credentials():
       return None
     return credentials
 
-
 def get_gcal_service(credentials):
   """
   We need a Google calendar 'service' object to obtain
@@ -224,12 +227,40 @@ def oauth2callback():
     app.logger.debug("Got credentials")
     return flask.redirect(flask.url_for('choose'))
 
+
+#############################
+#
+#  Processing callbacks
+#
+#############################
+
+
 @app.route("/_create", methods=['POST', 'GET'])
 def create():
     uid = request.json['id']
+
+    daterange = request.json['daterange'].split()
+    begin_date = arrow.get(interpret_date(daterange[0]))
+    end_date = arrow.get(interpret_date(daterange[2]))
+    diff = ((end_date - begin_date).days) + 1
+    begin_time = arrow.get(interpret_time(request.json['begintime']))
+    end_time = arrow.get(interpret_time(request.json['endtime']))
+    begin = add_time(begin_date, begin_time)
+    end = add_time(begin_date, end_time)
+
+    initial = []
+    for day in range(diff):
+        initial.append({ 'begin': begin, 'end': end })
+        begin = next_day(begin)
+        end = next_day(end)
+
     # TODO check to see if id already used? or maybe not
-    collection.insert({ "type":"schedule", "uid":uid, "times":[] })
+    collection.insert({ "type": "schedule", "uid": uid,
+                        "range": { "begin": add_time(begin_date, begin_time),
+                                   "end": add_time(end_date, end_time) },
+                        "times": initial })
     return flask.jsonify(True)
+
 
 @app.route('/_events', methods=['POST', 'GET'])
 def events():
@@ -238,69 +269,47 @@ def events():
     using AJAX
     """
 
+    # Grab unique schedule id for DB querying
+    uid = flask.session['uid']
+
     # Get GCal service
     service = get_gcal_service(valid_credentials())
     selected_cals = request.json['ids']
-    print(selected_cals)
 
-    # General date vars
-    begin_date = arrow.get(flask.session['begin_date'])
-    end_date = arrow.get(flask.session['end_date'])
+    # General date vars TODO get from DB
+    db_schedule = collection.find_one({ "uid": uid })
 
-    # Get difference between begin and end dates
-    diff = ((end_date - begin_date).days) + 1 # Add one to account for first day
+    # Get vals from db schedule
+    begin_query = arrow.get(db_schedule["range"]["begin"])
+    end_query = arrow.get(db_schedule["range"]["end"])
+    free_chunk = Chunk(begin_query, end_query)
+    db_block = db_to_block(db_schedule["times"])
 
-    # Adjust for timerange
-    begin_query = add_time(begin_date, flask.session['begin_time'])
-    end_query = add_time(begin_date, flask.session['end_time'])
+    # Iterate through selected ids
+    for cal_id in selected_cals:
+        block = Block()
+        events = service.events().list(calendarId=cal_id, # Calendar selection
+                                       timeMin=begin_query, # Open time
+                                       timeMax=end_query, # Close time
+                                       singleEvents=True, # No recurring event selection, fixes no summary index errors
+                                       orderBy="startTime").execute() # Order events by startTime and execute query
 
-    busy_result = [ ]
-    free_blocks = [ ]
-    # Iterate through number of days, make query between times for each day
-    for day in range(diff):
+        # Grab cal events for each id
+        for event in events['items']:
+            # Get arrow objects for start and end range
+            arrow_start = arrow.get(event['start']['dateTime'])
+            arrow_end = arrow.get(event['end']['dateTime'])
 
-        free = Chunk(arrow.get(begin_query), arrow.get(end_query))
-        day_blocks = [ ]
+            # Add chunk to calendar block
+            block.append(Chunk(arrow_start, arrow_end))
 
-        # Iterate through selected ids
-        for cal_id in selected_cals:
-            work_block = Block()
-            events = service.events().list(calendarId=cal_id, # Calendar selection
-                                           timeMin=begin_query, # Open time
-                                           timeMax=end_query, # Close time
-                                           singleEvents=True, # No recurring event selection, fixes no summary index errors
-                                           orderBy="startTime").execute() # Order events by startTime and execute query
-
-            # Grab cal events for each id
-            for event in events['items']:
-                # Append the event summary, start and end times
-                arrow_start = arrow.get(event['start']['dateTime'])
-                arrow_end = arrow.get(event['end']['dateTime'])
-                busy_result.append({'summary': event['summary'],
-                               "startTime": arrow_start.format("MM/DD/YYYY HH:mm"), # Format to be human readable
-                               "endTime": arrow_end.format("MM/DD/YYYY HH:mm")}) # Format to be human readable
-                # Add events to the day block
-                work_block.append(Chunk(arrow_start, arrow_end))
-
-            if len(work_block.chunks()) > 0:  # Ugly, temporary
-                day_blocks.append(work_block)
-
-        # Free time processing
-        if len(day_blocks) > 0:  # Ugly, temporary
-            open_block = day_blocks[0].complement(free)
-            print(">>", open_block.chunks())
-            for block in day_blocks[1:]:
-                complement = block.complement(free)
-                print(">>", complement.chunks())
-                open_block = open_block.intersect(complement)
-            free_blocks.append(open_block.serializable())
-
-        # Adjust dates by one day
-        begin_query = next_day(begin_query)
-        end_query = next_day(end_query)
-
+        block = block.complement(free_chunk)
+        db_block = db_block.intersect(block)
+    print(">>", block_to_db(db_block))
+    collection.update_one({ "uid": uid },
+                          { "$set": { "times": block_to_db(db_block) } })
     # TODO instead of returning to client, write to db and redirect
-    return flask.jsonify(busy=busy_result, free=free_blocks)
+    return flask.jsonify(True)
 
 
 #####
@@ -484,6 +493,21 @@ def cal_sort_key( cal ):
     else:
        primary_key = "X"
     return (primary_key, selected_key, cal["summary"])
+
+# TODO this shit
+def block_to_db(block):
+    result = []
+    for chunk in block._chunks:
+        result.append({'begin': chunk._begin.isoformat(), 'end': chunk._end.isoformat()})
+    return result
+
+
+def db_to_block(arr):
+    block = Block()
+    for time in arr:
+        block.append(Chunk(arrow.get(time['begin']), arrow.get(time['end'])))
+    return block
+
 
 
 #################
