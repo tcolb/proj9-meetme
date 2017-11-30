@@ -21,6 +21,9 @@ import httplib2   # used in oauth2 flow
 # Google API for services
 from apiclient import discovery
 
+# Pymongo
+from pymongo import MongoClient
+
 ###
 # Globals
 ###
@@ -38,6 +41,31 @@ app.secret_key = CONFIG.SECRET_KEY
 SCOPES = 'https://www.googleapis.com/auth/calendar.readonly'
 CLIENT_SECRET_FILE = CONFIG.GOOGLE_KEY_FILE  # You'll need this
 APPLICATION_NAME = 'MeetMe class project'
+
+MONGO_CLIENT_URL = "mongodb://{}:{}@{}:{}/{}".format(
+    CONFIG.DB_USER,
+    CONFIG.DB_USER_PW,
+    CONFIG.DB_HOST,
+    CONFIG.DB_PORT,
+    CONFIG.DB)
+
+print("Using Mongo URL '{}'".format(MONGO_CLIENT_URL))
+
+
+####
+# DB Config and Setup
+####
+
+
+try:
+    dbclient = MongoClient(MONGO_CLIENT_URL)
+    db = getattr(dbclient, CONFIG.DB)
+    collection = db.schedules
+
+except:
+    print("Failure opening database.  Is Mongo running? Correct password?")
+    sys.exit(1)
+
 
 #############################
 #
@@ -70,7 +98,22 @@ def choose():
     gcal_service = get_gcal_service(credentials)
     app.logger.debug("Returned from get_gcal_service")
     flask.g.calendars = list_calendars(gcal_service)
-    return render_template('index.html')
+    return flask.redirect("/schedule/" + flask.session['uid'])
+
+
+@app.route("/schedule/<unique_id>")
+def schedule(unique_id):
+    print(">> OCCURRED")
+    flask.session['uid'] = unique_id
+    # TODO FETCH CALC DATA AND SEND TO CLIENT
+    schedule = []
+    document = collection.find_one({ "uid":unique_id })
+    for time in document["times"]:
+        #schedule.append(arrow.get(time).isoformat())
+        schedule.append(time)
+
+    return render_template("schedule.html", times=schedule)
+
 
 ####
 #
@@ -177,45 +220,12 @@ def oauth2callback():
     app.logger.debug("Got credentials")
     return flask.redirect(flask.url_for('choose'))
 
-#####
-#
-#  Option setting:  Buttons or forms that add some
-#     information into session state.  Don't do the
-#     computation here; use of the information might
-#     depend on what other information we have.
-#   Setting an option sends us back to the main display
-#      page, where we may put the new information to use.
-#
-#####
-
-@app.route('/setrange', methods=['POST'])
-def setrange():
-    """
-    User chose a date range with the bootstrap daterange
-    widget.
-    """
-    app.logger.debug("Entering setrange")
-    flask.flash("Setrange gave us '{}' from '{}' to '{}'".format(
-      request.form.get('daterange'),
-      request.form.get('begintime'), request.form.get('endtime')))
-    daterange = request.form.get('daterange')
-    flask.session['daterange'] = daterange
-    flask.session['timerange'] = {'begintime': request.form.get('begintime'),
-                                  'endtime': request.form.get('endtime')}
-    daterange_parts = daterange.split()
-
-    flask.session['begin_date'] = interpret_date(daterange_parts[0])
-    flask.session['end_date'] = interpret_date(daterange_parts[2])
-    flask.session['begin_time'] = interpret_time(request.form.get('begintime'))
-    flask.session['end_time'] = interpret_time(request.form.get('endtime'))
-
-    app.logger.debug("Setrange parsed {} - {}  dates as {} - {} \n parsed {} - {} times as {} - {}".format(
-      daterange_parts[0], daterange_parts[1],
-      flask.session['begin_date'], flask.session['end_date'],
-      flask.session['timerange']['begintime'], flask.session['timerange']['endtime'],
-      flask.session['begin_time'], flask.session['end_time']))
-    return flask.redirect(flask.url_for("choose"))
-
+@app.route("/_create", methods=['POST', 'GET'])
+def create():
+    uid = request.json['id']
+    # TODO check to see if id already used? or maybe not
+    collection.insert({ "type":"schedule", "uid":uid, "times":[] })
+    return flask.jsonify(True)
 
 @app.route('/_events', methods=['POST', 'GET'])
 def events():
@@ -285,7 +295,48 @@ def events():
         begin_query = next_day(begin_query)
         end_query = next_day(end_query)
 
+    # TODO instead of returning to client, write to db and redirect
     return flask.jsonify(busy=busy_result, free=free_blocks)
+
+
+#####
+#
+#  Option setting:  Buttons or forms that add some
+#     information into session state.  Don't do the
+#     computation here; use of the information might
+#     depend on what other information we have.
+#   Setting an option sends us back to the main display
+#      page, where we may put the new information to use.
+#
+#####
+
+@app.route('/setrange', methods=['POST'])
+def setrange():
+    """
+    User chose a date range with the bootstrap daterange
+    widget.
+    """
+    app.logger.debug("Entering setrange")
+    flask.flash("Setrange gave us '{}' from '{}' to '{}'".format(
+      request.form.get('daterange'),
+      request.form.get('begintime'), request.form.get('endtime')))
+    daterange = request.form.get('daterange')
+    flask.session['daterange'] = daterange
+    flask.session['timerange'] = {'begintime': request.form.get('begintime'),
+                                  'endtime': request.form.get('endtime')}
+    daterange_parts = daterange.split()
+
+    flask.session['begin_date'] = interpret_date(daterange_parts[0])
+    flask.session['end_date'] = interpret_date(daterange_parts[2])
+    flask.session['begin_time'] = interpret_time(request.form.get('begintime'))
+    flask.session['end_time'] = interpret_time(request.form.get('endtime'))
+
+    app.logger.debug("Setrange parsed {} - {}  dates as {} - {} \n parsed {} - {} times as {} - {}".format(
+      daterange_parts[0], daterange_parts[1],
+      flask.session['begin_date'], flask.session['end_date'],
+      flask.session['timerange']['begintime'], flask.session['timerange']['endtime'],
+      flask.session['begin_time'], flask.session['end_time']))
+    return flask.redirect(flask.url_for("choose"))
 
 
 ####
