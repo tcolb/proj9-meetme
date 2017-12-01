@@ -263,7 +263,9 @@ def create():
         begin = next_day(begin)
         end = next_day(end)
 
-    # TODO check to see if id already used? or lazy ;)
+    # TODO check to see if id already used? or lazy ;) ideal would be using
+    # the prexisting document IDs
+    
     # Create the db object
     collection.insert({ "type": "schedule", "uid": uid,
                         "range": { "begin": add_time(begin_date, begin_time),
@@ -315,7 +317,7 @@ def events():
             # Add chunk to calendar block
             block.append(Chunk(arrow_start, arrow_end))
 
-        # Check if any events in block
+        # Check if any events in block, fixes indexing errors
         if len(block._chunks) > 0:
             # Get free times for calendar
             block = block.complement(free_chunk)
@@ -326,7 +328,7 @@ def events():
     # Update the db with new free times
     collection.update_one({ "uid": uid },
                           { "$set": { "times": block_to_db(db_block) } })
-                          
+
     return flask.jsonify(True)
 
 
