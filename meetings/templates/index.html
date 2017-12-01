@@ -7,9 +7,10 @@
      href="//cdn.jsdelivr.net/bootstrap/latest/css/bootstrap.css"
 />
 
+<link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
 
 <link rel="stylesheet" type="text/css"
-    href="/static/css/busy.css"
+    href="/static/busy.css"
 />
 
 <!-- jquery from a content distribution network; probably cached -->
@@ -29,72 +30,78 @@
 <script type="text/javascript" src="//cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.js"></script>
 <link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.css" />
 
-
 </head>
 
 <body>
-<div class="container">
+<div class="container-fluid">
 
-<h1 style="margin-bottom:20px;">Busy times</h1>
+  <div class="row header">
+    <div class="col-sm-12">
+      <h1 class="title">meeting scheduler</h1>
+    </div>
+  </div>
 
-<!--
-  -- If there are any warnings or other messages from a prior action,
-  -- they appear above the rest of the content, just until the next
-  -- action.
-  -->
 
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
-    <ul class=flashes>
-    {% for message in messages %}
-      <li>{{ message }}</li>
-    {% endfor %}
-    </ul>
-  {% endif %}
-{% endwith %}
 
-<div class="row">
-<div class="col-md-3">
-<h3>Date range</h3>
-<input type="text" id="daterange" size="12"
-   class="pull-down"
-   style="background: #fff; cursor: pointer; padding: 5px 10px;
-   border: 1px solid #ccc; width: 12em" >
-<script type="text/javascript">
-$(function() {
-$('#daterange').daterangepicker(
-  {    ranges: {
-         'Today': [moment(), moment()],
-         'Tomorrow':[moment().add(1, 'days'),
-                     moment().add(1, 'days')],
-         'This week':[moment(), moment().endOf('week')],
-         'Next week':[moment().add(7, 'days').startOf('week'),
-                      moment().add(7, 'days').endOf('week')],
-         'This month':[moment(), moment().endOf('month')],
-         'Within two weeks':[moment(),moment().add(15, 'days')]
-      }}
-     );
-  });
-</script>
+  <!--
+    -- If there are any warnings or other messages from a prior action,
+    -- they appear above the rest of the content, just until the next
+    -- action.
+    -->
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul class=flashes>
+      {% for message in messages %}
+        <li>{{ message }}</li>
+      {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
 
-<br/>
+
+  <div class="row content">
+    <div class="col-md-12" align="center">
+    <h4>Date range</h4>
+    <input type="text" id="daterange" size="12"
+       class="pull-down"
+       style="background: #fff; cursor: pointer; padding: 5px 10px;
+       border: 1px solid #ccc; width: 12em" >
+    <script type="text/javascript">
+    $(function() {
+    $('#daterange').daterangepicker(
+      {    ranges: {
+             'Today': [moment(), moment()],
+             'Tomorrow':[moment().add(1, 'days'),
+                         moment().add(1, 'days')],
+             'This week':[moment(), moment().endOf('week')],
+             'Next week':[moment().add(7, 'days').startOf('week'),
+                          moment().add(7, 'days').endOf('week')],
+             'This month':[moment(), moment().endOf('month')],
+             'Within two weeks':[moment(),moment().add(15, 'days')]
+          }}
+         );
+      });
+    </script>
+
+    </div>
+  </div>
+  <div class="row content">
+    <div class="col-md-12" align="center">
+    <h4>Time range</h4>
+      <!-- <label style="width:2.5em;">Min</label> -->
+      <input type="time" id="begintime" size="12" class="timeSelector">
+      <br/>
+      <!-- <label style="width:2.5em;">Max</label> -->
+      <input type="time" id="endtime" size="12" class="timeSelector">
+    </div>
+  </div>
+  <div class="row content">
+    <div class="col-sm-12" align="center">
+      <input type="submit" value="Schedule a meeting!" style="text-align:center;" id="create"/>
+    </div>
+  </div>
+
 </div>
-
-<div class="col-md-3">
-<h3>Time range</h3>
-  <label style="width:2em;">Min</label>
-  <input type="time" id="begintime" size="12"
-         style="background: #fff; cursor: pointer; padding: 5px 10px;
-                border: 1px solid #ccc;">
-   <br/>
-   <label style="width:2em;">Max</label>
-   <input type="time" id="endtime" size="12"
-          style="background: #fff; cursor: pointer; padding: 5px 10px;
-                 border: 1px solid #ccc;">
-<br/>
-</div>
-<input type="submit" value="Schedule a meeting!" style="margin-bottom: 40px;" id="create"/>
-
 <script>
 
   $("#create").click(function() {
@@ -117,7 +124,7 @@ $('#daterange').daterangepicker(
 
 
           if (data == true) {
-            window.location.replace("/schedule/" + generated_id);
+            window.location.assign("/schedule/" + generated_id);
           } else {
             // TODO SHOW ERROR, CREATING NEW SCHEDULE DID NOT WORK
             console.log("Creating new schedule failed!");

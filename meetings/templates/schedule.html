@@ -3,73 +3,91 @@
 <title>Your Meeting Times</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<link rel="stylesheet" type="text/css"
-     href="//cdn.jsdelivr.net/bootstrap/latest/css/bootstrap.css"
-/>
+<!-- Custom CSS -->
+<link rel="stylesheet" type="text/css" href="/static/busy.css"/>
 
+<!-- jQuery -->
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
 
-<link rel="stylesheet" type="text/css"
-    href="/static/css/busy.css"
-/>
-
-<!-- jquery from a content distribution network; probably cached -->
-<script type="text/javascript"
-     src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js">
-</script>
-
-<!-- Ideally the rest of our javascript dependencies would be
-     bundled and minified with 'browserify', but I've found that
-     it difficult to handle browserify dependencies for class
-     projects.  So, we'll pick up moment and a date range picker
-     from CDNs instead.
--->
-
+<!-- Moment.js -->
 <script type="text/javascript" src="//cdn.jsdelivr.net/momentjs/latest/moment.min.js"></script>
 
+<!-- Roboto Font -->
+<link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
+
+<!-- Boot Strap -->
+<link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/bootstrap/latest/css/bootstrap.css"/>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.0.3/css/bootstrap.min.css" rel="stylesheet">
 <script type="text/javascript" src="//cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.js"></script>
 <link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.css" />
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.0.3/css/bootstrap.min.css" rel="stylesheet">
 
+<!-- FullCalendar -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/3.7.0/fullcalendar.min.js" type="text/javascript"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/3.7.0/fullcalendar.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/3.7.0/fullcalendar.print.css" rel="stylesheet">
 
 </head>
 
 <body>
-<div class="container">
-  <!-- TIMES DISPLAY -->
-  {% if times is defined  %}
-    <div class="row">
-    {% for time in times %}
-      <h5>{{ time }}</h5>
-    {% endfor %}
-    </div>
-  {% endif %}
+<div class="container-fluid">
 
-  <input type="submit" id="add_acc" value="Add an account"/>
+<!-- Header Bar -->
+<div class="row header">
+  <div class="col-sm-12">
+    <h1 class="title">/schedule/{{ g.uid }}</h1>
+  </div>
+</div>
+
+<!-- Content Area -->
+<div class="row">
+<div class="col-sm-3 content"></div>
+<div class="col-md-3 content">
+
 
   <!-- Show available calendars -->
   {% if g.calendars is defined  %}
-    <h5 style="margin-top: 10px;">Available calendars:</h5>
-    <div class="row">
-    {% for cal in g.calendars if cal.selected %}
-      <div class="col-md-4">
-        <!-- Create a checkbox, our selection method for the calendars -->
-        <label><input type="checkbox" name="calChk" value="{{ cal.id }}"
-                      style="margin: 10px;">{{ cal.summary }}</label>
-      </div>
-    {% endfor %}
-    </div>
-    <div class="row">
-      <input type="submit" id="subChk" value="Add calendar(s)"
-             style="margin: 15px">
-    </div>
+  <h4>Available calendars</h4>
+  {% for cal in g.calendars if cal.selected %}
+  <!-- Create a checkbox, our selection method for the calendars -->
+  <label><input type="checkbox" name="calChk" value="{{ cal.id }}"
+                style="margin: 10px;"><i>{{ cal.summary }}</i></label> <br/>
+  {% endfor %}
+  <input type="submit" id="subChk" value="Add calendar(s)"
+         style="margin: 15px">
+  {% else %}
+  <input type="submit" id="add_acc" value="Check login" style="margin: 15px"/>
   {% endif %}
 </div>
 
+<div class="col-md-4 content">
+
+  <h4>Free times</h4>
+
+    <div id="calendar" style="width: 50vh"></div>
+
+</div>
+</div>
+</div>
 
 <script>
 
-$("#add_acc").click(function() {
-  // TODO google auth and add calendars
+// https://stackoverflow.com/questions/11178426/how-can-i-pass-data-from-flask-to-javascript-in-a-template
+$(document).ready(function() {
+  $("#calendar").fullCalendar({
+    header: {
+      left: "",
+      center: "",
+      right: ""
+    },
+    defaultView: "listYear",
+    events: {{ g.times|tojson }}
+  });
 
+})
+
+$("#add_acc").click(function() {
+  // Replace so that you cant go back into auth
   window.location.replace("/choose");
 });
 

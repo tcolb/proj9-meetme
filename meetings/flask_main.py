@@ -81,10 +81,7 @@ except:
 @app.route("/index")
 def index():
     app.logger.debug("Entering index")
-    if 'begin_date' not in flask.session:
-        init_session_values()
     return render_template('index.html')
-
 
 @app.route("/choose")
 def choose():
@@ -104,23 +101,31 @@ def choose():
     flask.session['calendars'] = list_calendars(gcal_service)
     return flask.redirect("/schedule/" + flask.session['uid'])
 
-
+# http://exploreflask.com/en/latest/views.html
 @app.route("/schedule/<unique_id>")
 def schedule(unique_id):
-    flask.session['uid'] = unique_id  # UID to redirect to after account selection
-
+    # UID to redirect to after account selection
+    flask.session['uid'] = unique_id
+    flask.g.uid = unique_id
+    # Iterate through times in db, add to list
     schedule = []
     document = collection.find_one({ "uid":unique_id })
     for time in document["times"]:
-        #schedule.append(arrow.get(time).isoformat())
-        schedule.append(time)
+        if time['begin'] != time['end']: # HACK solution to my Block logic issue
+            schedule.append({ 'title': 'Free',
+                              'start': time['begin'],
+                              'end': time['end'] })
+        # TODO formatting for front end
 
+    # Setting data
+    flask.g.times = schedule
     try:
         flask.g.calendars = flask.session['calendars']
     except KeyError:
+        # Login may not have occurred yet
         app.logger.debug("Calendars not defined")
 
-    return render_template("schedule.html", times=schedule)
+    return render_template("schedule.html")
 
 
 ####
@@ -151,6 +156,7 @@ def schedule(unique_id):
 #  as a 'continuation' or 'return address' to use instead.
 #
 ####
+
 
 def valid_credentials():
     """
@@ -230,24 +236,28 @@ def oauth2callback():
 
 #############################
 #
-#  Processing callbacks
+#  Calendar processing routes (for ajax requests)
 #
 #############################
 
 
 @app.route("/_create", methods=['POST', 'GET'])
 def create():
+    # Grab UID for later use
     uid = request.json['id']
-
+    # Get date data from json
     daterange = request.json['daterange'].split()
     begin_date = arrow.get(interpret_date(daterange[0]))
     end_date = arrow.get(interpret_date(daterange[2]))
-    diff = ((end_date - begin_date).days) + 1
     begin_time = arrow.get(interpret_time(request.json['begintime']))
     end_time = arrow.get(interpret_time(request.json['endtime']))
+    # Calculate number of days
+    diff = ((end_date - begin_date).days) + 1
+    # Get time range for first day
     begin = add_time(begin_date, begin_time)
     end = add_time(begin_date, end_time)
 
+    # Calcuate time ranges for each day
     initial = []
     for day in range(diff):
         initial.append({ 'begin': begin, 'end': end })
@@ -255,6 +265,7 @@ def create():
         end = next_day(end)
 
     # TODO check to see if id already used? or maybe not
+    # Create the db object
     collection.insert({ "type": "schedule", "uid": uid,
                         "range": { "begin": add_time(begin_date, begin_time),
                                    "end": add_time(end_date, end_time) },
@@ -268,114 +279,55 @@ def events():
     Get event data for selected calendars and send back to frontend
     using AJAX
     """
-
     # Grab unique schedule id for DB querying
     uid = flask.session['uid']
-
     # Get GCal service
     service = get_gcal_service(valid_credentials())
     selected_cals = request.json['ids']
-
-    # General date vars TODO get from DB
+    # Get db object
     db_schedule = collection.find_one({ "uid": uid })
-
-    # Get vals from db schedule
+    # Get vals from db object
     begin_query = arrow.get(db_schedule["range"]["begin"])
     end_query = arrow.get(db_schedule["range"]["end"])
     free_chunk = Chunk(begin_query, end_query)
     db_block = db_to_block(db_schedule["times"])
 
-    # Iterate through selected ids
+    # Iterate through selected calendars
     for cal_id in selected_cals:
+        # Block containing calendar data
         block = Block()
+        # Query for calendar events
         events = service.events().list(calendarId=cal_id, # Calendar selection
                                        timeMin=begin_query, # Open time
                                        timeMax=end_query, # Close time
                                        singleEvents=True, # No recurring event selection, fixes no summary index errors
                                        orderBy="startTime").execute() # Order events by startTime and execute query
 
-        # Grab cal events for each id
+        # Iterate through each event in calendar
         for event in events['items']:
             # Get arrow objects for start and end range
             arrow_start = arrow.get(event['start']['dateTime'])
             arrow_end = arrow.get(event['end']['dateTime'])
-
             # Add chunk to calendar block
             block.append(Chunk(arrow_start, arrow_end))
 
+        # Get free times for calendar
         block = block.complement(free_chunk)
+        # Intersect calendar free times with db free times
         db_block = db_block.intersect(block)
-    print(">>", block_to_db(db_block))
+    # Update the db with new free times
     collection.update_one({ "uid": uid },
                           { "$set": { "times": block_to_db(db_block) } })
-    # TODO instead of returning to client, write to db and redirect
+    # TODO return True if successful
     return flask.jsonify(True)
 
 
-#####
-#
-#  Option setting:  Buttons or forms that add some
-#     information into session state.  Don't do the
-#     computation here; use of the information might
-#     depend on what other information we have.
-#   Setting an option sends us back to the main display
-#      page, where we may put the new information to use.
-#
-#####
-
-@app.route('/setrange', methods=['POST'])
-def setrange():
-    """
-    User chose a date range with the bootstrap daterange
-    widget.
-    """
-    app.logger.debug("Entering setrange")
-    flask.flash("Setrange gave us '{}' from '{}' to '{}'".format(
-      request.form.get('daterange'),
-      request.form.get('begintime'), request.form.get('endtime')))
-    daterange = request.form.get('daterange')
-    flask.session['daterange'] = daterange
-    flask.session['timerange'] = {'begintime': request.form.get('begintime'),
-                                  'endtime': request.form.get('endtime')}
-    daterange_parts = daterange.split()
-
-    flask.session['begin_date'] = interpret_date(daterange_parts[0])
-    flask.session['end_date'] = interpret_date(daterange_parts[2])
-    flask.session['begin_time'] = interpret_time(request.form.get('begintime'))
-    flask.session['end_time'] = interpret_time(request.form.get('endtime'))
-
-    app.logger.debug("Setrange parsed {} - {}  dates as {} - {} \n parsed {} - {} times as {} - {}".format(
-      daterange_parts[0], daterange_parts[1],
-      flask.session['begin_date'], flask.session['end_date'],
-      flask.session['timerange']['begintime'], flask.session['timerange']['endtime'],
-      flask.session['begin_time'], flask.session['end_time']))
-    return flask.redirect(flask.url_for("choose"))
-
-
 ####
 #
-#   Initialize session variables
+#   Helper functions
 #
 ####
 
-def init_session_values():
-    """
-    Start with some reasonable defaults for date and time ranges.
-    Note this must be run in app context ... can't call from main.
-    """
-    # Default date span = tomorrow to 1 week from now
-    now = arrow.now('local')     # We really should be using tz from browser
-    tomorrow = now.replace(days=+1)
-    nextweek = now.replace(days=+7)
-    flask.session["begin_date"] = tomorrow.floor('day').isoformat()
-    flask.session["end_date"] = nextweek.ceil('day').isoformat()
-    flask.session["daterange"] = "{} - {}".format(
-        tomorrow.format("MM/DD/YYYY"),
-        nextweek.format("MM/DD/YYYY"))
-    # Default time span each day, 9 to 5
-    flask.session["begin_time"] = interpret_time("9am")
-    flask.session["end_time"] = interpret_time("5pm")
-    flask.session["timerange"] = {'begintime': '09:00 AM', 'endtime': '5:00 PM'}
 
 def interpret_time( text ):
     """
@@ -406,7 +358,6 @@ def interpret_time( text ):
     # FIXME: Remove the workaround when arrow is fixed (but only after testing
     # on raspberry Pi --- failure is likely due to 32-bit integers on that platform)
 
-
 def interpret_date( text ):
     """
     Convert text of date to ISO format used internally,
@@ -436,13 +387,6 @@ def add_time(date_text, time_text):
 
     return date_arrow.shift(hours=+time_arrow.hour,
                             minutes=+time_arrow.minute).isoformat()
-
-
-####
-#
-#  Functions (NOT pages) that return some information
-#
-####
 
 def list_calendars(service):
     """
@@ -477,7 +421,6 @@ def list_calendars(service):
             })
     return sorted(result, key=cal_sort_key)
 
-
 def cal_sort_key( cal ):
     """
     Sort key for the list of calendars:  primary calendar first,
@@ -494,13 +437,11 @@ def cal_sort_key( cal ):
        primary_key = "X"
     return (primary_key, selected_key, cal["summary"])
 
-# TODO this shit
 def block_to_db(block):
     result = []
     for chunk in block._chunks:
         result.append({'begin': chunk._begin.isoformat(), 'end': chunk._end.isoformat()})
     return result
-
 
 def db_to_block(arr):
     block = Block()
@@ -512,7 +453,7 @@ def db_to_block(arr):
 
 #################
 #
-# Functions used within the templates
+# Template filters
 #
 #################
 
