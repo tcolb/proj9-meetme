@@ -315,14 +315,18 @@ def events():
             # Add chunk to calendar block
             block.append(Chunk(arrow_start, arrow_end))
 
-        # Get free times for calendar
-        block = block.complement(free_chunk)
-        # Intersect calendar free times with db free times
-        db_block = db_block.intersect(block)
+        # Check if any events in block
+        if len(block._chunks) > 0:
+            # Get free times for calendar
+            block = block.complement(free_chunk)
+            # Intersect calendar free times with db free times
+            db_block = db_block.intersect(block)
+        else:
+            app.logger.debug("No events in time range in calendar: " + cal_id)
     # Update the db with new free times
     collection.update_one({ "uid": uid },
                           { "$set": { "times": block_to_db(db_block) } })
-
+                          
     return flask.jsonify(True)
 
 
