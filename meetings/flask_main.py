@@ -280,9 +280,14 @@ def events():
     """
     # Grab unique schedule id for DB querying
     uid = flask.session['uid']
-    # Get GCal service
-    service = get_gcal_service(valid_credentials())
+    # Get selected calendars
     selected_cals = request.json['ids']
+    # Get GCal service
+    service = valid_credentials()
+    if service:
+        service = get_gcal_service(service)
+    else: # If credentiasl aren't valid get new ones
+        return flask.jsonify(False)
     # Get db object
     db_schedule = collection.find_one({ "uid": uid })
     # Get vals from db object
@@ -317,7 +322,7 @@ def events():
     # Update the db with new free times
     collection.update_one({ "uid": uid },
                           { "$set": { "times": block_to_db(db_block) } })
-    # TODO return True if successful
+
     return flask.jsonify(True)
 
 

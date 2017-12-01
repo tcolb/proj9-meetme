@@ -51,10 +51,10 @@
                 style="margin: 10px;"><i>{{ cal.summary }}</i></label> <br/>
   {% endfor %}
   <input type="submit" id="subChk" value="Add calendar(s)"
-         style="margin: 15px">
-  {% else %}
-  <input type="submit" id="add_acc" value="Check login" style="margin: 15px"/>
+         style="margin: 15px"> <br/>
   {% endif %}
+  <input type="submit" id="add_acc" value="Check login" style="margin: 15px"/>
+
 </div>
 
 <div class="col-md-4 content">
@@ -109,7 +109,11 @@ $("#subChk").click(function() {
     url: '/_events',
     data: JSON.stringify({ 'ids': calIds }),
     success: function(data) {
-      if (data) { window.location.reload() }
+      if (data) {
+        window.location.reload();
+      } else {
+        window.location.assign("/choose");
+      }
     }
   });
 });
