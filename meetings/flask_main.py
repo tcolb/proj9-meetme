@@ -115,7 +115,6 @@ def schedule(unique_id):
             schedule.append({ 'title': 'Free',
                               'start': time['begin'],
                               'end': time['end'] })
-        # TODO formatting for front end
 
     # Setting data
     flask.g.times = schedule
@@ -264,7 +263,7 @@ def create():
         begin = next_day(begin)
         end = next_day(end)
 
-    # TODO check to see if id already used? or maybe not
+    # TODO check to see if id already used? or lazy ;)
     # Create the db object
     collection.insert({ "type": "schedule", "uid": uid,
                         "range": { "begin": add_time(begin_date, begin_time),
