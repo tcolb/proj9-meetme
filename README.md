@@ -1,4 +1,4 @@
-# CIS322 Project 9 - MeetMe
+# CIS322 Final Project - MeetMe
 Uses mLab, flask, jQuery, bootstrap, and fullCalendar
 
 intended usage: visit index of website, specify date and time range, send /schedule/xxxxxxxxxxx url to colleagues, have them log in and select their busy calendars which in turn edits the free times
